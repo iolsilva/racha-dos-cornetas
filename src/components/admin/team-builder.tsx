@@ -882,27 +882,35 @@ export function TeamBuilder({
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
-        <Card className="h-fit">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
-                Jogadores disponiveis
-              </p>
-              <h3 className="mt-2 text-xl font-semibold text-white">
-                Base para preencher as vagas
-              </h3>
-            </div>
-            <Badge>{availableCount} livres</Badge>
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
+              Painel de apoio
+            </p>
+            <h3 className="mt-2 text-xl font-semibold text-white">
+              Busca, selecao rapida e jogadores disponiveis
+            </h3>
+            <p className="mt-2 max-w-3xl text-sm text-slate-400">
+              Esta faixa superior concentra o que o administrador precisa para
+              preencher as vagas com rapidez: busca, vaga selecionada, contadores e
+              a lista de nomes ainda livres naquela rodada.
+            </p>
           </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge>{availableCount} livres</Badge>
+            <Badge>{missingSlots} vagas em aberto</Badge>
+          </div>
+        </div>
 
-          <div className="mt-5 grid gap-4">
+        <div className="mt-6 grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
+          <div className="grid gap-4">
             <FormField
               label="Busca por nome"
               hint={
                 selectedSlot
                   ? `Vaga selecionada: ${teamColors[selectedSlot.teamColor].label} / ${selectedSlot.label}`
-                  : "Selecione uma vaga para alocar mais rapido."
+                  : "Selecione uma vaga nos times abaixo para habilitar a alocacao rapida."
               }
             >
               <Input
@@ -912,147 +920,194 @@ export function TeamBuilder({
               />
             </FormField>
 
+            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                  Foco atual
+                </p>
+                <p className="mt-2 text-sm text-slate-300">
+                  {selectedSlot
+                    ? `${teamColors[selectedSlot.teamColor].label} / ${selectedSlot.label}`
+                    : "Nenhuma vaga selecionada"}
+                </p>
+              </div>
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                  Instrucao
+                </p>
+                <p className="mt-2 text-sm text-slate-300">
+                  Clique em uma vaga do Azul ou Vermelho e depois em um nome da lista.
+                </p>
+              </div>
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                  Troca rapida
+                </p>
+                <p className="mt-2 text-sm text-slate-300">
+                  Clique entre duas vagas ocupadas para mover ou trocar jogadores sem
+                  remontar tudo.
+                </p>
+              </div>
+            </div>
+
             {selectedSlot ? (
               <div className="rounded-[24px] border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-                Clique em um nome abaixo para preencher{" "}
+                Clique em um nome da lista ao lado para preencher{" "}
                 <strong>
                   {teamColors[selectedSlot.teamColor].label} / {selectedSlot.label}
                 </strong>
-                . Tambem e possivel clicar entre duas vagas para mover ou trocar jogadores.
+                . Se clicar em outra vaga ocupada, o sistema move ou troca os nomes sem
+                duplicidade.
               </div>
             ) : (
               <div className="rounded-[24px] border border-white/10 bg-white/5 p-4 text-sm text-slate-400">
-                Selecione uma vaga vazia ou ocupada no quadro de times para comecar a
-                preencher.
+                Escolha uma vaga nos times abaixo para ativar a selecao rapida. Assim a
+                alocacao fica visual e previsivel.
               </div>
             )}
+          </div>
 
-            <div className="grid gap-3">
-              {availablePlayers.length > 0 ? (
-                availablePlayers.map((player) => (
-                  <button
-                    key={player.id}
-                    type="button"
-                    disabled={!selectedSlot}
-                    onClick={() => selectedSlot && assignPlayerToSlot(player.id, selectedSlot)}
-                    className={cn(
-                      "rounded-[24px] border p-4 text-left transition",
-                      selectedSlot
-                        ? "border-white/10 bg-white/5 hover:border-amber-400/30 hover:bg-white/10"
-                        : "border-white/10 bg-slate-950/60 opacity-70",
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-white">{player.nickname}</p>
-                        <p className="mt-1 text-sm text-slate-400">{player.full_name}</p>
+          <div className="grid gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
+                  Jogadores disponiveis
+                </p>
+                <h4 className="mt-2 text-lg font-semibold text-white">
+                  Lista filtrada pela presenca
+                </h4>
+              </div>
+              <Badge>{availableCount} nomes livres</Badge>
+            </div>
+
+            <div className="max-h-[34rem] overflow-y-auto pr-1">
+              <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                {availablePlayers.length > 0 ? (
+                  availablePlayers.map((player) => (
+                    <button
+                      key={player.id}
+                      type="button"
+                      disabled={!selectedSlot}
+                      onClick={() => selectedSlot && assignPlayerToSlot(player.id, selectedSlot)}
+                      className={cn(
+                        "rounded-[24px] border p-4 text-left transition",
+                        selectedSlot
+                          ? "border-white/10 bg-white/5 hover:border-amber-400/30 hover:bg-white/10"
+                          : "border-white/10 bg-slate-950/60 opacity-70",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-white">{player.nickname}</p>
+                          <p className="mt-1 text-sm text-slate-400">{player.full_name}</p>
+                        </div>
+                        <Badge>{formatPlayerTypeLabel(player.player_type)}</Badge>
                       </div>
-                      <Badge>{formatPlayerTypeLabel(player.player_type)}</Badge>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge>{formatPositionLabel(player.position)}</Badge>
-                      {!player.active ? (
-                        <Badge className="border-white/10 bg-slate-900/80 text-slate-300">
-                          {formatPlayerStatusLabel(player.active)}
-                        </Badge>
-                      ) : null}
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <EmptyState
-                  title="Nenhum nome livre nesta combinacao"
-                  description="Ajuste a busca, marque mais presentes ou troque a vaga selecionada para liberar outras opcoes."
-                />
-              )}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge>{formatPositionLabel(player.position)}</Badge>
+                        {!player.active ? (
+                          <Badge className="border-white/10 bg-slate-900/80 text-slate-300">
+                            {formatPlayerStatusLabel(player.active)}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <EmptyState
+                    title="Nenhum nome livre nesta combinacao"
+                    description="Ajuste a busca, marque mais presentes ou troque a vaga selecionada para liberar outras opcoes."
+                  />
+                )}
+              </div>
             </div>
           </div>
-        </Card>
-
-        <div className="grid gap-6">
-          {teamOrder.map((teamColor) => {
-            const teamSlots = slots.filter((slot) => slot.teamColor === teamColor);
-            const lineSlots = teamSlots.filter((slot) => slot.kind === "line");
-            const goalkeeperSlot = teamSlots.find((slot) => slot.kind === "goalkeeper");
-            const reserveSlots = teamSlots.filter((slot) => slot.kind === "reserve");
-            const allocatedCount = teamSlots.filter(
-              (slot) => activeDraft.slotAssignments[slot.key],
-            ).length;
-
-            return (
-              <Card key={teamColor} className="overflow-hidden">
-                <div
-                  className={cn(
-                    "-mx-5 -mt-5 border-b px-5 py-4",
-                    teamColor === "blue"
-                      ? "border-cyan-400/20 bg-cyan-500/10"
-                      : "border-rose-400/20 bg-rose-500/10",
-                  )}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
-                        Time {teamColors[teamColor].label}
-                      </p>
-                      <h3 className="mt-2 text-2xl font-semibold text-white">
-                        {allocatedCount} de {teamSlots.length} vagas preenchidas
-                      </h3>
-                    </div>
-                    <Badge
-                      className={
-                        teamColor === "blue"
-                          ? "border-cyan-400/30 bg-cyan-500/15 text-cyan-100"
-                          : "border-rose-400/30 bg-rose-500/15 text-rose-100"
-                      }
-                    >
-                      {teamColors[teamColor].label}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid gap-4">
-                  <div>
-                    <div className="mb-3 flex items-center justify-between">
-                      <p className="text-sm font-semibold text-white">Linha</p>
-                      <Badge>{lineSlots.length} vagas</Badge>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {lineSlots.map((slot) => renderSlot(slot))}
-                    </div>
-                  </div>
-
-                  {goalkeeperSlot ? (
-                    <div>
-                      <div className="mb-3 flex items-center justify-between">
-                        <p className="text-sm font-semibold text-white">Goleiro</p>
-                        <Badge className="border-cyan-400/30 bg-cyan-500/15 text-cyan-100">
-                          Vaga destacada
-                        </Badge>
-                      </div>
-                      {renderSlot(goalkeeperSlot)}
-                    </div>
-                  ) : null}
-
-                  <div>
-                    <div className="mb-3 flex items-center justify-between">
-                      <p className="text-sm font-semibold text-white">Reservas</p>
-                      <Badge>{reserveSlots.length} vagas</Badge>
-                    </div>
-                    {reserveSlots.length > 0 ? (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {reserveSlots.map((slot) => renderSlot(slot))}
-                      </div>
-                    ) : (
-                      <div className="rounded-[24px] border border-dashed border-white/10 bg-white/5 p-4 text-sm text-slate-500">
-                        Sem vagas de reserva configuradas para este lado.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
         </div>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
+        {teamOrder.map((teamColor) => {
+          const teamSlots = slots.filter((slot) => slot.teamColor === teamColor);
+          const lineSlots = teamSlots.filter((slot) => slot.kind === "line");
+          const goalkeeperSlot = teamSlots.find((slot) => slot.kind === "goalkeeper");
+          const reserveSlots = teamSlots.filter((slot) => slot.kind === "reserve");
+          const allocatedCount = teamSlots.filter(
+            (slot) => activeDraft.slotAssignments[slot.key],
+          ).length;
+
+          return (
+            <Card key={teamColor} className="overflow-hidden">
+              <div
+                className={cn(
+                  "-mx-5 -mt-5 border-b px-5 py-4",
+                  teamColor === "blue"
+                    ? "border-cyan-400/20 bg-cyan-500/10"
+                    : "border-rose-400/20 bg-rose-500/10",
+                )}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
+                      Time {teamColors[teamColor].label}
+                    </p>
+                    <h3 className="mt-2 text-2xl font-semibold text-white">
+                      {allocatedCount} de {teamSlots.length} vagas preenchidas
+                    </h3>
+                  </div>
+                  <Badge
+                    className={
+                      teamColor === "blue"
+                        ? "border-cyan-400/30 bg-cyan-500/15 text-cyan-100"
+                        : "border-rose-400/30 bg-rose-500/15 text-rose-100"
+                    }
+                  >
+                    {teamColors[teamColor].label}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4">
+                <div>
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-white">Linha</p>
+                    <Badge>{lineSlots.length} vagas</Badge>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {lineSlots.map((slot) => renderSlot(slot))}
+                  </div>
+                </div>
+
+                {goalkeeperSlot ? (
+                  <div>
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-sm font-semibold text-white">Goleiro</p>
+                      <Badge className="border-cyan-400/30 bg-cyan-500/15 text-cyan-100">
+                        Vaga destacada
+                      </Badge>
+                    </div>
+                    {renderSlot(goalkeeperSlot)}
+                  </div>
+                ) : null}
+
+                <div>
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-white">Reservas</p>
+                    <Badge>{reserveSlots.length} vagas</Badge>
+                  </div>
+                  {reserveSlots.length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {reserveSlots.map((slot) => renderSlot(slot))}
+                    </div>
+                  ) : (
+                    <div className="rounded-[24px] border border-dashed border-white/10 bg-white/5 p-4 text-sm text-slate-500">
+                      Sem vagas de reserva configuradas para este lado.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
