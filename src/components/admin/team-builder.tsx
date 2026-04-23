@@ -671,70 +671,74 @@ export function TeamBuilder({
     const isGoalieSlot = slot.kind === "goalkeeper";
 
     return (
-      <button
+      <div
         key={slot.key}
-        type="button"
-        onClick={() => handleSlotClick(slot)}
         className={cn(
-          "rounded-[24px] border p-4 text-left transition",
+          "rounded-[24px] border p-4 transition",
           isGoalieSlot
             ? "border-cyan-400/30 bg-cyan-500/10"
             : "border-white/10 bg-white/5 hover:bg-white/10",
           isSelected ? "ring-2 ring-amber-400/60" : "",
         )}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-semibold text-white">{slot.label}</p>
-              {isGoalieSlot ? (
-                <Badge className="border-cyan-400/30 bg-cyan-500/15 text-cyan-100">
-                  Goleiro
-                </Badge>
-              ) : null}
-              {slot.kind === "reserve" ? (
-                <Badge className="border-white/10 bg-white/10 text-slate-100">
-                  Reserva
+        <button
+          type="button"
+          onClick={() => handleSlotClick(slot)}
+          className="w-full text-left"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-white">{slot.label}</p>
+                {isGoalieSlot ? (
+                  <Badge className="border-cyan-400/30 bg-cyan-500/15 text-cyan-100">
+                    Goleiro
+                  </Badge>
+                ) : null}
+                {slot.kind === "reserve" ? (
+                  <Badge className="border-white/10 bg-white/10 text-slate-100">
+                    Reserva
+                  </Badge>
+                ) : null}
+              </div>
+              {player ? (
+                <>
+                  <p className="mt-3 text-lg font-semibold text-white">{player.nickname}</p>
+                  <p className="mt-1 text-sm text-slate-400">{player.full_name}</p>
+                </>
+              ) : (
+                <p className="mt-3 text-sm text-slate-500">
+                  Clique na vaga e escolha um nome na lista de disponiveis.
+                </p>
+              )}
+            </div>
+            <span className="text-xs uppercase tracking-[0.22em] text-slate-500">
+              {isSelected ? "Selecionada" : "Clique para editar"}
+            </span>
+          </div>
+        </button>
+
+        {player ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge>{formatPlayerTypeLabel(player.player_type)}</Badge>
+              {!player.active ? (
+                <Badge className="border-white/10 bg-slate-900/80 text-slate-300">
+                  {formatPlayerStatusLabel(player.active)}
                 </Badge>
               ) : null}
             </div>
-            {player ? (
-              <>
-                <p className="mt-3 text-lg font-semibold text-white">{player.nickname}</p>
-                <p className="mt-1 text-sm text-slate-400">{player.full_name}</p>
-              </>
-            ) : (
-              <p className="mt-3 text-sm text-slate-500">
-                Clique na vaga e escolha um nome na lista de disponiveis.
-              </p>
-            )}
-          </div>
-          {player ? (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={(event) => {
-                event.stopPropagation();
-                removePlayerFromSlot(slot.key);
-              }}
+              onClick={() => removePlayerFromSlot(slot.key)}
             >
               Remover
             </Button>
-          ) : null}
-        </div>
-
-        {player ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Badge>{formatPlayerTypeLabel(player.player_type)}</Badge>
-            {!player.active ? (
-              <Badge className="border-white/10 bg-slate-900/80 text-slate-300">
-                {formatPlayerStatusLabel(player.active)}
-              </Badge>
-            ) : null}
           </div>
         ) : null}
-      </button>
+      </div>
     );
   }
 
@@ -1025,7 +1029,7 @@ export function TeamBuilder({
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
         {teamOrder.map((teamColor) => {
           const teamSlots = slots.filter((slot) => slot.teamColor === teamColor);
           const lineSlots = teamSlots.filter((slot) => slot.kind === "line");
@@ -1036,7 +1040,7 @@ export function TeamBuilder({
           ).length;
 
           return (
-            <Card key={teamColor} className="overflow-hidden">
+            <Card key={teamColor} className="min-w-0 overflow-hidden">
               <div
                 className={cn(
                   "-mx-5 -mt-5 border-b px-5 py-4",
