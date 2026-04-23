@@ -43,12 +43,10 @@ function getStatusBadgeClassName(active: boolean) {
 }
 
 export default async function RankingPage() {
-  const { ranking, pairings, winningTeams } = await getRankingPageData();
-  const lineRanking = ranking.filter((entry) => entry.position === "line");
-  const goalkeeperRanking = ranking.filter(
-    (entry) => entry.position === "goalkeeper",
-  );
+  const { lineRanking, goalkeeperRanking, pairings, winningTeams } =
+    await getRankingPageData();
   const lineRankCounts = countEntriesByRank(lineRanking);
+  const goalkeeperRankCounts = countEntriesByRank(goalkeeperRanking);
   const hasClassicPodium =
     lineRanking[0]?.rank_position === 1 &&
     lineRanking[1]?.rank_position === 2 &&
@@ -240,21 +238,34 @@ export default async function RankingPage() {
                 </tr>
               </thead>
               <tbody>
-                {goalkeeperRanking.map((entry) => (
-                  <tr key={entry.player_id}>
-                    <Td>{formatOrdinalRank(entry.rank_position)}</Td>
-                    <Td>{entry.nickname}</Td>
-                    <Td>
-                      <Badge className={getStatusBadgeClassName(entry.active)}>
-                        {formatPlayerStatusLabel(entry.active)}
-                      </Badge>
-                    </Td>
-                    <Td>{entry.wins}</Td>
-                    <Td>{entry.draws}</Td>
-                    <Td>{entry.losses}</Td>
-                    <Td>{entry.matches_played}</Td>
-                  </tr>
-                ))}
+                {goalkeeperRanking.map((entry) => {
+                  const isTied = (goalkeeperRankCounts[entry.rank_position] ?? 0) > 1;
+
+                  return (
+                    <tr key={entry.player_id}>
+                      <Td>{formatOrdinalRank(entry.rank_position)}</Td>
+                      <Td>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{entry.nickname}</span>
+                          {isTied ? (
+                            <Badge className="border-white/10 bg-white/5 text-slate-200">
+                              Empate
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </Td>
+                      <Td>
+                        <Badge className={getStatusBadgeClassName(entry.active)}>
+                          {formatPlayerStatusLabel(entry.active)}
+                        </Badge>
+                      </Td>
+                      <Td>{entry.wins}</Td>
+                      <Td>{entry.draws}</Td>
+                      <Td>{entry.losses}</Td>
+                      <Td>{entry.matches_played}</Td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </Table>
           </div>

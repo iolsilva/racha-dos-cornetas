@@ -4,9 +4,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getReferenceMonth } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/server";
 
-async function getSeasonRanking(limit?: number) {
+type RankingGroup = "line" | "goalkeeper";
+
+async function getSeasonRankingEntries() {
   const adminClient = createAdminClient();
-  let query = adminClient
+  const { data, error } = await adminClient
     .from("rankings")
     .select(
       "season_year, player_id, wins, draws, losses, matches_played, players!inner(full_name, nickname, position, active)",
@@ -16,17 +18,11 @@ async function getSeasonRanking(limit?: number) {
     .order("draws", { ascending: false })
     .order("matches_played", { ascending: false });
 
-  if (limit) {
-    query = query.limit(limit);
-  }
-
-  const { data, error } = await query;
-
   if (error) {
     throw new Error(error.message);
   }
 
-  const entries = (data ?? []).map((row) => ({
+  return (data ?? []).map((row) => ({
     season_year: row.season_year,
     player_id: row.player_id,
     full_name: (row.players as { full_name?: string } | null)?.full_name ?? "-",
@@ -40,8 +36,29 @@ async function getSeasonRanking(limit?: number) {
     losses: row.losses,
     matches_played: row.matches_played,
   }));
+}
 
-  return withCompetitionPositions(entries.sort(compareRankingEntries));
+function buildSeasonRanking(
+  entries: Awaited<ReturnType<typeof getSeasonRankingEntries>>,
+  group: RankingGroup,
+  limit?: number,
+) {
+  const rankedEntries = withCompetitionPositions(
+    entries
+      .filter((entry) => entry.position === group)
+      .sort(compareRankingEntries),
+  );
+
+  if (!limit) {
+    return rankedEntries;
+  }
+
+  return rankedEntries.slice(0, limit);
+}
+
+async function getSeasonRanking(group: RankingGroup, limit?: number) {
+  const entries = await getSeasonRankingEntries();
+  return buildSeasonRanking(entries, group, limit);
 }
 
 export async function getHomeDashboardData() {
@@ -56,7 +73,7 @@ export async function getHomeDashboardData() {
     paymentsResult,
   ] = await Promise.all([
     supabase.rpc("get_player_home_snapshot"),
-    getSeasonRanking(5),
+    getSeasonRanking("line", 5),
     supabase
       .from("matches")
       .select("id, match_date, location, status, blue_score, red_score")
@@ -158,8 +175,8 @@ export async function getMatchesPageData() {
 export async function getRankingPageData() {
   const supabase = await createClient();
 
-  const [rankingResult, pairingsResult, winningTeamsResult] = await Promise.all([
-    getSeasonRanking(),
+  const [rankingEntriesResult, pairingsResult, winningTeamsResult] = await Promise.all([
+    getSeasonRankingEntries(),
     supabase
       .from("player_pairing_stats")
       .select("*")
@@ -181,7 +198,8 @@ export async function getRankingPageData() {
   }
 
   return {
-    ranking: rankingResult,
+    lineRanking: buildSeasonRanking(rankingEntriesResult, "line"),
+    goalkeeperRanking: buildSeasonRanking(rankingEntriesResult, "goalkeeper"),
     pairings: pairingsResult.data ?? [],
     winningTeams: winningTeamsResult.data ?? [],
   };
