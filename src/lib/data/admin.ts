@@ -150,7 +150,13 @@ export async function getAdminFinanceData() {
 export async function getAdminMatchesData() {
   const supabase = await createClient();
 
-  const [matchesResult, playersResult, attendanceResult, assignmentsResult] =
+  const [
+    matchesResult,
+    playersResult,
+    attendanceResult,
+    attendanceRecordsResult,
+    assignmentsResult,
+  ] =
     await Promise.all([
       supabase
         .from("matches")
@@ -167,6 +173,10 @@ export async function getAdminMatchesData() {
         .from("attendance_overview")
         .select("*")
         .order("match_date", { ascending: false }),
+      supabase
+        .from("attendance")
+        .select("match_id, player_id, status")
+        .order("confirmed_at", { ascending: false }),
       supabase
         .from("match_team_assignments")
         .select("*")
@@ -186,6 +196,10 @@ export async function getAdminMatchesData() {
     throw new Error(attendanceResult.error.message);
   }
 
+  if (attendanceRecordsResult.error) {
+    throw new Error(attendanceRecordsResult.error.message);
+  }
+
   if (assignmentsResult.error) {
     throw new Error(assignmentsResult.error.message);
   }
@@ -194,6 +208,7 @@ export async function getAdminMatchesData() {
     matches: matchesResult.data ?? [],
     players: playersResult.data ?? [],
     attendance: attendanceResult.data ?? [],
+    attendanceRecords: attendanceRecordsResult.data ?? [],
     assignments: assignmentsResult.data ?? [],
   };
 }

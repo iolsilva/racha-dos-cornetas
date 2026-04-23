@@ -11,6 +11,7 @@ import {
   paymentSchema,
   playerSchema,
   resultSchema,
+  teamBuilderSchema,
   updateMatchSchema,
 } from "@/lib/validation";
 
@@ -21,8 +22,8 @@ import {
   refreshPaths,
 } from "./helpers";
 
-function parseAssignmentsFromFormData(formData: FormData) {
-  const rawValue = formData.get("assignments");
+function parseJsonArrayField(formData: FormData, fieldName: string, errorMessage: string) {
+  const rawValue = formData.get(fieldName);
 
   if (!rawValue) {
     return [];
@@ -32,10 +33,16 @@ function parseAssignmentsFromFormData(formData: FormData) {
     const parsed = JSON.parse(String(rawValue));
     return Array.isArray(parsed) ? parsed : [];
   } catch {
-    throw new Error(
-      "Nao foi possivel ler a escalacao enviada. Atualize a pagina e tente novamente.",
-    );
+    throw new Error(errorMessage);
   }
+}
+
+function parseAssignmentsFromFormData(formData: FormData) {
+  return parseJsonArrayField(
+    formData,
+    "assignments",
+    "Nao foi possivel ler a escalacao enviada. Atualize a pagina e tente novamente.",
+  );
 }
 
 export async function createPlayerAction(
@@ -503,6 +510,133 @@ export async function updateMatchAction(
 
     refreshPaths(["/admin", "/admin/partidas", "/jogos", "/ranking", "/dashboard"]);
     return actionSuccess("Partida atualizada e ranking sincronizado.");
+  } catch (error) {
+    return actionError(error);
+  }
+}
+
+export async function saveTeamBuilderAction(
+  _prevState: ActionState,
+  formData: FormData,
+) {
+  try {
+    await getActionContext({ adminOnly: true });
+    const adminClient = createAdminClient();
+    const nowIso = new Date().toISOString();
+    const presentPlayerIds = parseJsonArrayField(
+      formData,
+      "presentPlayerIds",
+      "Nao foi possivel ler a lista de presenca enviada. Atualize a pagina e tente novamente.",
+    );
+    const assignmentsRaw = parseAssignmentsFromFormData(formData) as Array<{
+      playerId: string;
+      teamColor: "blue" | "red";
+      isGoalkeeper?: boolean;
+      isReserve?: boolean;
+      lineupOrder?: number | null;
+    }>;
+
+    const parsed = teamBuilderSchema.parse({
+      matchId: formData.get("matchId"),
+      presentPlayerIds,
+      assignments: assignmentsRaw ?? [],
+    });
+
+    const { data: match, error: matchError } = await adminClient
+      .from("matches")
+      .select("id, match_date, status, counts_for_ranking")
+      .eq("id", parsed.matchId)
+      .single();
+
+    if (matchError || !match) {
+      throw new Error(matchError?.message ?? "Partida nao encontrada.");
+    }
+
+    const { data: teams, error: teamsError } = await adminClient
+      .from("match_teams")
+      .select("id, team_color")
+      .eq("match_id", parsed.matchId);
+
+    if (teamsError) {
+      throw new Error(teamsError.message);
+    }
+
+    const teamMap = Object.fromEntries(
+      (teams ?? []).map((team) => [team.team_color, team.id]),
+    ) as Partial<Record<"blue" | "red", string>>;
+
+    if (!teamMap.blue || !teamMap.red) {
+      throw new Error("A partida nao possui os times base necessarios para montar a escalacao.");
+    }
+
+    const { error: deleteAttendanceError } = await adminClient
+      .from("attendance")
+      .delete()
+      .eq("match_id", parsed.matchId);
+
+    if (deleteAttendanceError) {
+      throw new Error(deleteAttendanceError.message);
+    }
+
+    if (parsed.presentPlayerIds.length > 0) {
+      const { error: insertAttendanceError } = await adminClient
+        .from("attendance")
+        .upsert(
+          parsed.presentPlayerIds.map((playerId) => ({
+            match_id: parsed.matchId,
+            player_id: playerId,
+            status: "confirmed",
+            confirmed_at: nowIso,
+          })),
+          { onConflict: "match_id,player_id" },
+        );
+
+      if (insertAttendanceError) {
+        throw new Error(insertAttendanceError.message);
+      }
+    }
+
+    const { error: deleteAssignmentsError } = await adminClient
+      .from("match_players")
+      .delete()
+      .eq("match_id", parsed.matchId);
+
+    if (deleteAssignmentsError) {
+      throw new Error(deleteAssignmentsError.message);
+    }
+
+    if (parsed.assignments.length > 0) {
+      const { error: insertAssignmentsError } = await adminClient
+        .from("match_players")
+        .insert(
+          parsed.assignments.map((assignment) => ({
+            match_id: parsed.matchId,
+            match_team_id: teamMap[assignment.teamColor],
+            player_id: assignment.playerId,
+            is_goalkeeper: assignment.isGoalkeeper,
+            is_reserve: assignment.isReserve,
+            lineup_order: assignment.lineupOrder ?? null,
+          })),
+        );
+
+      if (insertAssignmentsError) {
+        throw new Error(insertAssignmentsError.message);
+      }
+    }
+
+    if (match.status === "completed" && match.counts_for_ranking) {
+      const targetSeason = new Date(match.match_date).getFullYear();
+      const refreshResult = await adminClient.rpc("refresh_rankings", {
+        target_season: targetSeason,
+      });
+
+      if (refreshResult.error) {
+        throw new Error(refreshResult.error.message);
+      }
+    }
+
+    refreshPaths(["/admin", "/admin/partidas", "/jogos", "/dashboard", "/ranking"]);
+    return actionSuccess("Montagem salva com presenca e times sincronizados.");
   } catch (error) {
     return actionError(error);
   }

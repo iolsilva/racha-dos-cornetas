@@ -1,0 +1,1072 @@
+"use client";
+
+import { useState } from "react";
+
+import { useServerAction } from "@/components/forms/action-form";
+import { SubmitButton } from "@/components/forms/submit-button";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { teamColors } from "@/lib/constants";
+import {
+  formatMatchStatusLabel,
+  formatPlayerStatusLabel,
+  formatPlayerTypeLabel,
+  formatPositionLabel,
+} from "@/lib/labels";
+import { cn } from "@/lib/utils";
+import { saveTeamBuilderAction } from "@/server/actions/admin";
+
+type MatchRow = {
+  id: string;
+  match_date: string;
+  location: string;
+  status: "scheduled" | "completed" | "cancelled";
+};
+
+type PlayerRow = {
+  id: string;
+  full_name: string;
+  nickname: string;
+  player_type: "fixed" | "guest" | "goalkeeper";
+  position: "line" | "goalkeeper";
+  active: boolean;
+  fee_exempt: boolean;
+};
+
+type AttendanceRecordRow = {
+  match_id: string;
+  player_id: string;
+  status: "confirmed" | "waitlist" | "declined";
+};
+
+type AssignmentRow = {
+  id: string;
+  match_id: string;
+  player_id: string;
+  nickname: string;
+  team_color: "blue" | "red";
+  is_goalkeeper: boolean;
+  is_reserve: boolean;
+  lineup_order: number | null;
+};
+
+type TeamColor = "blue" | "red";
+type SlotKind = "line" | "goalkeeper" | "reserve";
+
+type Slot = {
+  key: string;
+  teamColor: TeamColor;
+  kind: SlotKind;
+  index: number;
+  label: string;
+};
+
+type TeamBuilderDraft = {
+  presentPlayerIds: string[];
+  slotAssignments: Record<string, string | null>;
+  linesPerTeam: number;
+  reservesPerTeam: number;
+};
+
+const teamOrder: TeamColor[] = ["blue", "red"];
+const defaultLinesPerTeam = 6;
+const defaultReservesPerTeam = 2;
+
+function buildSlotKey(teamColor: TeamColor, kind: SlotKind, index: number) {
+  return `${teamColor}:${kind}:${index}`;
+}
+
+function buildSlots(linesPerTeam: number, reservesPerTeam: number) {
+  return teamOrder.flatMap((teamColor) => [
+    ...Array.from({ length: linesPerTeam }, (_, index) => ({
+      key: buildSlotKey(teamColor, "line", index + 1),
+      teamColor,
+      kind: "line" as const,
+      index: index + 1,
+      label: `Linha ${index + 1}`,
+    })),
+    {
+      key: buildSlotKey(teamColor, "goalkeeper", 1),
+      teamColor,
+      kind: "goalkeeper" as const,
+      index: 1,
+      label: "Goleiro",
+    },
+    ...Array.from({ length: reservesPerTeam }, (_, index) => ({
+      key: buildSlotKey(teamColor, "reserve", index + 1),
+      teamColor,
+      kind: "reserve" as const,
+      index: index + 1,
+      label: `Reserva ${index + 1}`,
+    })),
+  ]);
+}
+
+function compareAssignments(left: AssignmentRow, right: AssignmentRow) {
+  const leftOrder = left.lineup_order ?? Number.MAX_SAFE_INTEGER;
+  const rightOrder = right.lineup_order ?? Number.MAX_SAFE_INTEGER;
+
+  if (leftOrder !== rightOrder) {
+    return leftOrder - rightOrder;
+  }
+
+  return left.nickname.localeCompare(right.nickname, "pt-BR", {
+    sensitivity: "base",
+  });
+}
+
+function buildMatchDraft(
+  matchId: string | null,
+  attendanceRecords: AttendanceRecordRow[],
+  assignments: AssignmentRow[],
+) {
+  if (!matchId) {
+    return null;
+  }
+
+  const matchAssignments = assignments
+    .filter((assignment) => assignment.match_id === matchId)
+    .sort(compareAssignments);
+  const confirmedAttendance = attendanceRecords
+    .filter(
+      (record) => record.match_id === matchId && record.status === "confirmed",
+    )
+    .map((record) => record.player_id);
+  const presentPlayerIds = Array.from(
+    new Set([
+      ...confirmedAttendance,
+      ...matchAssignments.map((assignment) => assignment.player_id),
+    ]),
+  );
+
+  const linesPerTeam = teamOrder.reduce((maxValue, teamColor) => {
+    const total = matchAssignments.filter(
+      (assignment) =>
+        assignment.team_color === teamColor &&
+        !assignment.is_goalkeeper &&
+        !assignment.is_reserve,
+    ).length;
+
+    return Math.max(maxValue, total);
+  }, defaultLinesPerTeam);
+
+  const reservesPerTeam = teamOrder.reduce((maxValue, teamColor) => {
+    const total = matchAssignments.filter(
+      (assignment) =>
+        assignment.team_color === teamColor &&
+        assignment.is_reserve &&
+        !assignment.is_goalkeeper,
+    ).length;
+
+    return Math.max(maxValue, total);
+  }, defaultReservesPerTeam);
+
+  const slots = buildSlots(linesPerTeam, reservesPerTeam);
+  const slotAssignments = Object.fromEntries(
+    slots.map((slot) => [slot.key, null]),
+  ) as Record<string, string | null>;
+
+  teamOrder.forEach((teamColor) => {
+    const teamAssignments = matchAssignments.filter(
+      (assignment) => assignment.team_color === teamColor,
+    );
+    const lineAssignments = teamAssignments.filter(
+      (assignment) => !assignment.is_goalkeeper && !assignment.is_reserve,
+    );
+    const goalkeeperAssignments = teamAssignments.filter(
+      (assignment) => assignment.is_goalkeeper,
+    );
+    const reserveAssignments = teamAssignments.filter(
+      (assignment) => assignment.is_reserve && !assignment.is_goalkeeper,
+    );
+
+    lineAssignments.forEach((assignment, index) => {
+      const slotKey = buildSlotKey(teamColor, "line", index + 1);
+      if (slotKey in slotAssignments) {
+        slotAssignments[slotKey] = assignment.player_id;
+      }
+    });
+
+    if (goalkeeperAssignments[0]) {
+      const slotKey = buildSlotKey(teamColor, "goalkeeper", 1);
+      slotAssignments[slotKey] = goalkeeperAssignments[0].player_id;
+    }
+
+    reserveAssignments.forEach((assignment, index) => {
+      const slotKey = buildSlotKey(teamColor, "reserve", index + 1);
+      if (slotKey in slotAssignments) {
+        slotAssignments[slotKey] = assignment.player_id;
+      }
+    });
+  });
+
+  return {
+    presentPlayerIds,
+    slotAssignments,
+    linesPerTeam,
+    reservesPerTeam,
+  } satisfies TeamBuilderDraft;
+}
+
+function getAssignedPlayerIds(slotAssignments: Record<string, string | null>) {
+  return Object.values(slotAssignments).filter(
+    (playerId): playerId is string => Boolean(playerId),
+  );
+}
+
+function getSlotPlayerCount(
+  draft: TeamBuilderDraft,
+  teamColor: TeamColor,
+  kind: SlotKind,
+) {
+  return Object.entries(draft.slotAssignments).filter(([slotKey, playerId]) => {
+    if (!playerId) {
+      return false;
+    }
+
+    return slotKey.startsWith(`${teamColor}:${kind}:`);
+  }).length;
+}
+
+function isGoalkeeper(player: PlayerRow) {
+  return player.player_type === "goalkeeper" || player.position === "goalkeeper";
+}
+
+function canPlayerFillSlot(player: PlayerRow | undefined, slot: Slot) {
+  if (!player) {
+    return false;
+  }
+
+  if (slot.kind === "goalkeeper") {
+    return isGoalkeeper(player);
+  }
+
+  return !isGoalkeeper(player);
+}
+
+function normalizeSlotAssignments(
+  currentAssignments: Record<string, string | null>,
+  linesPerTeam: number,
+  reservesPerTeam: number,
+) {
+  const nextSlots = buildSlots(linesPerTeam, reservesPerTeam);
+  const nextAssignments = Object.fromEntries(
+    nextSlots.map((slot) => [slot.key, null]),
+  ) as Record<string, string | null>;
+
+  nextSlots.forEach((slot) => {
+    if (slot.key in currentAssignments) {
+      nextAssignments[slot.key] = currentAssignments[slot.key];
+    }
+  });
+
+  return nextAssignments;
+}
+
+function getLineCountLowerBound(draft: TeamBuilderDraft, teamColor: TeamColor) {
+  return getSlotPlayerCount(draft, teamColor, "line");
+}
+
+function getReserveCountLowerBound(draft: TeamBuilderDraft, teamColor: TeamColor) {
+  return getSlotPlayerCount(draft, teamColor, "reserve");
+}
+
+function buildAssignmentsPayload(draft: TeamBuilderDraft) {
+  return buildSlots(draft.linesPerTeam, draft.reservesPerTeam)
+    .map((slot) => {
+      const playerId = draft.slotAssignments[slot.key];
+
+      if (!playerId) {
+        return null;
+      }
+
+      return {
+        playerId,
+        teamColor: slot.teamColor,
+        isGoalkeeper: slot.kind === "goalkeeper",
+        isReserve: slot.kind === "reserve",
+        lineupOrder:
+          slot.kind === "line"
+            ? slot.index
+            : slot.kind === "goalkeeper"
+              ? draft.linesPerTeam + 1
+              : draft.linesPerTeam + 1 + slot.index,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+}
+
+export function TeamBuilder({
+  matches,
+  players,
+  attendanceRecords,
+  assignments,
+}: {
+  matches: MatchRow[];
+  players: PlayerRow[];
+  attendanceRecords: AttendanceRecordRow[];
+  assignments: AssignmentRow[];
+}) {
+  const { formAction } = useServerAction(saveTeamBuilderAction);
+  const defaultMatchId =
+    matches.find((match) => match.status === "scheduled")?.id ?? matches[0]?.id ?? null;
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(defaultMatchId);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedSlotKey, setSelectedSlotKey] = useState<string | null>(null);
+  const [draft, setDraft] = useState<TeamBuilderDraft | null>(() =>
+    buildMatchDraft(defaultMatchId, attendanceRecords, assignments),
+  );
+
+  if (matches.length === 0) {
+    return (
+      <EmptyState
+        title="Nenhuma partida disponivel"
+        description="Crie a rodada primeiro para liberar a presenca e a montagem visual dos times."
+      />
+    );
+  }
+
+  if (!draft || !selectedMatchId) {
+    return null;
+  }
+
+  const activeDraft = draft;
+
+  const selectedMatch =
+    matches.find((match) => match.id === selectedMatchId) ?? matches[0] ?? null;
+  const selectedMatchPlayerIds = new Set([
+    ...activeDraft.presentPlayerIds,
+    ...getAssignedPlayerIds(activeDraft.slotAssignments),
+  ]);
+  const relevantPlayers = players.filter(
+    (player) => player.active || selectedMatchPlayerIds.has(player.id),
+  );
+  const playerMap = Object.fromEntries(
+    relevantPlayers.map((player) => [player.id, player]),
+  ) as Record<string, PlayerRow>;
+  const groupedPlayers = {
+    fixed: relevantPlayers.filter(
+      (player) => player.player_type === "fixed" && player.active,
+    ),
+    goalkeepers: relevantPlayers.filter(
+      (player) => player.player_type === "goalkeeper" && player.active,
+    ),
+    guests: relevantPlayers.filter(
+      (player) => player.player_type === "guest" && player.active,
+    ),
+    inactiveLinked: relevantPlayers.filter(
+      (player) => !player.active && selectedMatchPlayerIds.has(player.id),
+    ),
+  };
+  const slots = buildSlots(activeDraft.linesPerTeam, activeDraft.reservesPerTeam);
+  const selectedSlot = slots.find((slot) => slot.key === selectedSlotKey) ?? null;
+  const assignedPlayerIds = new Set(getAssignedPlayerIds(activeDraft.slotAssignments));
+  const availablePlayers = relevantPlayers
+    .filter(
+      (player) =>
+        activeDraft.presentPlayerIds.includes(player.id) &&
+        !assignedPlayerIds.has(player.id),
+    )
+    .filter((player) => !selectedSlot || canPlayerFillSlot(player, selectedSlot))
+    .filter((player) => {
+      const term = searchTerm.trim().toLowerCase();
+
+      if (!term) {
+        return true;
+      }
+
+      return (
+        player.nickname.toLowerCase().includes(term) ||
+        player.full_name.toLowerCase().includes(term)
+      );
+    })
+    .sort((left, right) =>
+      left.nickname.localeCompare(right.nickname, "pt-BR", {
+        sensitivity: "base",
+      }),
+    );
+
+  const missingSlots =
+    slots.filter((slot) => !activeDraft.slotAssignments[slot.key]).length;
+  const availableCount = availablePlayers.length;
+  const serializedPresence = JSON.stringify(activeDraft.presentPlayerIds);
+  const serializedAssignments = JSON.stringify(buildAssignmentsPayload(activeDraft));
+
+  function clearPlayerFromSlots(playerId: string, currentDraft: TeamBuilderDraft) {
+    const nextAssignments = { ...currentDraft.slotAssignments };
+
+    Object.entries(nextAssignments).forEach(([slotKey, assignedPlayerId]) => {
+      if (assignedPlayerId === playerId) {
+        nextAssignments[slotKey] = null;
+      }
+    });
+
+    return nextAssignments;
+  }
+
+  function togglePresence(playerId: string) {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const isPresent = current.presentPlayerIds.includes(playerId);
+      const nextPresentPlayerIds = isPresent
+        ? current.presentPlayerIds.filter((id) => id !== playerId)
+        : [...current.presentPlayerIds, playerId];
+      const nextAssignments = isPresent
+        ? clearPlayerFromSlots(playerId, current)
+        : current.slotAssignments;
+
+      return {
+        ...current,
+        presentPlayerIds: nextPresentPlayerIds,
+        slotAssignments: nextAssignments,
+      };
+    });
+
+    if (selectedSlotKey && activeDraft.slotAssignments[selectedSlotKey] === playerId) {
+      setSelectedSlotKey(null);
+    }
+  }
+
+  function assignPlayerToSlot(playerId: string, slot: Slot) {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const player = playerMap[playerId];
+
+      if (!canPlayerFillSlot(player, slot)) {
+        return current;
+      }
+
+      const nextAssignments = clearPlayerFromSlots(playerId, current);
+      nextAssignments[slot.key] = playerId;
+
+      return {
+        ...current,
+        slotAssignments: nextAssignments,
+      };
+    });
+    setSelectedSlotKey(slot.key);
+  }
+
+  function removePlayerFromSlot(slotKey: string) {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        slotAssignments: {
+          ...current.slotAssignments,
+          [slotKey]: null,
+        },
+      };
+    });
+    setSelectedSlotKey((current) => (current === slotKey ? null : current));
+  }
+
+  function moveOrSwapSlot(sourceKey: string, targetKey: string) {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const sourceSlot = slots.find((slot) => slot.key === sourceKey);
+      const targetSlot = slots.find((slot) => slot.key === targetKey);
+
+      if (!sourceSlot || !targetSlot) {
+        return current;
+      }
+
+      const sourcePlayerId = current.slotAssignments[sourceKey];
+      const targetPlayerId = current.slotAssignments[targetKey];
+
+      if (!sourcePlayerId) {
+        return current;
+      }
+
+      const sourcePlayer = playerMap[sourcePlayerId];
+      const targetPlayer = targetPlayerId ? playerMap[targetPlayerId] : undefined;
+
+      if (!canPlayerFillSlot(sourcePlayer, targetSlot)) {
+        return current;
+      }
+
+      if (targetPlayerId && !canPlayerFillSlot(targetPlayer, sourceSlot)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        slotAssignments: {
+          ...current.slotAssignments,
+          [sourceKey]: targetPlayerId ?? null,
+          [targetKey]: sourcePlayerId,
+        },
+      };
+    });
+    setSelectedSlotKey(null);
+  }
+
+  function handleSlotClick(slot: Slot) {
+    if (!selectedSlotKey) {
+      setSelectedSlotKey(slot.key);
+      return;
+    }
+
+    if (selectedSlotKey === slot.key) {
+      setSelectedSlotKey(null);
+      return;
+    }
+
+    const selectedPlayerId = activeDraft.slotAssignments[selectedSlotKey];
+
+    if (!selectedPlayerId) {
+      setSelectedSlotKey(slot.key);
+      return;
+    }
+
+    moveOrSwapSlot(selectedSlotKey, slot.key);
+  }
+
+  function updateLinesPerTeam(nextValue: number) {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const lowerBound = Math.max(
+        getLineCountLowerBound(current, "blue"),
+        getLineCountLowerBound(current, "red"),
+      );
+      const normalizedValue = Math.max(nextValue, lowerBound, 1);
+
+      return {
+        ...current,
+        linesPerTeam: normalizedValue,
+        slotAssignments: normalizeSlotAssignments(
+          current.slotAssignments,
+          normalizedValue,
+          current.reservesPerTeam,
+        ),
+      };
+    });
+    setSelectedSlotKey(null);
+  }
+
+  function updateReservesPerTeam(nextValue: number) {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const lowerBound = Math.max(
+        getReserveCountLowerBound(current, "blue"),
+        getReserveCountLowerBound(current, "red"),
+      );
+      const normalizedValue = Math.max(nextValue, lowerBound, 0);
+
+      return {
+        ...current,
+        reservesPerTeam: normalizedValue,
+        slotAssignments: normalizeSlotAssignments(
+          current.slotAssignments,
+          current.linesPerTeam,
+          normalizedValue,
+        ),
+      };
+    });
+    setSelectedSlotKey(null);
+  }
+
+  function renderPresenceGroup(
+    title: string,
+    description: string,
+    groupPlayers: PlayerRow[],
+  ) {
+    if (groupPlayers.length === 0) {
+      return null;
+    }
+
+    const orderedPlayers = [...groupPlayers].sort((left, right) =>
+      left.nickname.localeCompare(right.nickname, "pt-BR", {
+        sensitivity: "base",
+      }),
+    );
+
+    return (
+      <div className="space-y-3">
+        <div>
+          <p className="text-sm font-semibold text-white">{title}</p>
+          <p className="mt-1 text-xs text-slate-500">{description}</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {orderedPlayers.map((player) => {
+            const isPresent = activeDraft.presentPlayerIds.includes(player.id);
+            const isAssigned = assignedPlayerIds.has(player.id);
+
+            return (
+              <button
+                key={player.id}
+                type="button"
+                onClick={() => togglePresence(player.id)}
+                className={cn(
+                  "rounded-[24px] border p-4 text-left transition",
+                  isPresent
+                    ? "border-emerald-400/30 bg-emerald-500/10"
+                    : "border-white/10 bg-white/5 hover:bg-white/10",
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-white">{player.nickname}</p>
+                    <p className="mt-1 text-sm text-slate-400">{player.full_name}</p>
+                  </div>
+                  <Badge
+                    className={
+                      isPresent
+                        ? "border-emerald-400/30 bg-emerald-500/15 text-emerald-100"
+                        : "border-white/10 bg-slate-900/80 text-slate-300"
+                    }
+                  >
+                    {isPresent ? "Presente" : "Fora"}
+                  </Badge>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge>{formatPlayerTypeLabel(player.player_type)}</Badge>
+                  <Badge>{formatPositionLabel(player.position)}</Badge>
+                  {!player.active ? (
+                    <Badge className="border-white/10 bg-slate-900/80 text-slate-300">
+                      {formatPlayerStatusLabel(player.active)}
+                    </Badge>
+                  ) : null}
+                  {isAssigned ? (
+                    <Badge className="border-amber-400/30 bg-amber-400/15 text-amber-100">
+                      Alocado
+                    </Badge>
+                  ) : null}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderSlot(slot: Slot) {
+    const assignedPlayerId = activeDraft.slotAssignments[slot.key];
+    const player = assignedPlayerId ? playerMap[assignedPlayerId] : undefined;
+    const isSelected = selectedSlotKey === slot.key;
+    const isGoalieSlot = slot.kind === "goalkeeper";
+
+    return (
+      <button
+        key={slot.key}
+        type="button"
+        onClick={() => handleSlotClick(slot)}
+        className={cn(
+          "rounded-[24px] border p-4 text-left transition",
+          isGoalieSlot
+            ? "border-cyan-400/30 bg-cyan-500/10"
+            : "border-white/10 bg-white/5 hover:bg-white/10",
+          isSelected ? "ring-2 ring-amber-400/60" : "",
+        )}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-white">{slot.label}</p>
+              {isGoalieSlot ? (
+                <Badge className="border-cyan-400/30 bg-cyan-500/15 text-cyan-100">
+                  Goleiro
+                </Badge>
+              ) : null}
+              {slot.kind === "reserve" ? (
+                <Badge className="border-white/10 bg-white/10 text-slate-100">
+                  Reserva
+                </Badge>
+              ) : null}
+            </div>
+            {player ? (
+              <>
+                <p className="mt-3 text-lg font-semibold text-white">{player.nickname}</p>
+                <p className="mt-1 text-sm text-slate-400">{player.full_name}</p>
+              </>
+            ) : (
+              <p className="mt-3 text-sm text-slate-500">
+                Clique na vaga e escolha um nome na lista de disponiveis.
+              </p>
+            )}
+          </div>
+          {player ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={(event) => {
+                event.stopPropagation();
+                removePlayerFromSlot(slot.key);
+              }}
+            >
+              Remover
+            </Button>
+          ) : null}
+        </div>
+
+        {player ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Badge>{formatPlayerTypeLabel(player.player_type)}</Badge>
+            {!player.active ? (
+              <Badge className="border-white/10 bg-slate-900/80 text-slate-300">
+                {formatPlayerStatusLabel(player.active)}
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
+      </button>
+    );
+  }
+
+  return (
+    <form action={formAction} className="grid gap-6">
+      <input type="hidden" name="matchId" value={selectedMatchId} />
+      <input type="hidden" name="presentPlayerIds" value={serializedPresence} />
+      <input type="hidden" name="assignments" value={serializedAssignments} />
+
+      <Card className="mesh-panel">
+        <div className="grid gap-4 xl:grid-cols-[1fr_0.95fr]">
+          <FormField
+            label="Partida"
+            hint="Escolha a rodada e monte tudo no mesmo painel: presenca, times, goleiros e reservas."
+          >
+            <Select
+              value={selectedMatchId}
+              onChange={(event) => {
+                const nextMatchId = event.target.value;
+                setSelectedMatchId(nextMatchId);
+                setSearchTerm("");
+                setSelectedSlotKey(null);
+                setDraft(buildMatchDraft(nextMatchId, attendanceRecords, assignments));
+              }}
+            >
+              {matches.map((match) => (
+                <option key={match.id} value={match.id}>
+                  {match.match_date} - {match.location}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+
+          <div className="grid gap-3 rounded-[26px] border border-white/10 bg-white/5 p-4 sm:grid-cols-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Status</p>
+              <p className="mt-2 font-semibold text-white">
+                {selectedMatch ? formatMatchStatusLabel(selectedMatch.status) : "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Presentes</p>
+              <p className="mt-2 font-semibold text-white">
+                {activeDraft.presentPlayerIds.length}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Alocados</p>
+              <p className="mt-2 font-semibold text-white">{assignedPlayerIds.size}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Livres</p>
+              <p className="mt-2 font-semibold text-white">
+                {activeDraft.presentPlayerIds.length - assignedPlayerIds.size}
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
+              Etapa 1
+            </p>
+            <h3 className="mt-2 text-xl font-semibold text-white">
+              Lista de presenca da rodada
+            </h3>
+            <p className="mt-2 max-w-3xl text-sm text-slate-400">
+              Marque quem vai para o racha. Essa lista alimenta a montagem visual e
+              mantem os confirmados salvos no banco mesmo que ainda nao estejam em um time.
+            </p>
+          </div>
+          <Badge className="border-emerald-400/30 bg-emerald-500/10 text-emerald-100">
+            {activeDraft.presentPlayerIds.length} confirmados
+          </Badge>
+        </div>
+
+        <div className="mt-6 grid gap-6">
+          {renderPresenceGroup(
+            "Mensalistas",
+            "Base fixa da rodada. Aqui voce bate o olho e marca quem realmente vem.",
+            groupedPlayers.fixed,
+          )}
+          {renderPresenceGroup(
+            "Goleiros",
+            "Ficam separados para facilitar o encaixe final de cada lado.",
+            groupedPlayers.goalkeepers,
+          )}
+          {renderPresenceGroup(
+            "Diaristas",
+            "Entram na lista do dia sem misturar com os mensalistas fixos.",
+            groupedPlayers.guests,
+          )}
+          {groupedPlayers.inactiveLinked.length > 0
+            ? renderPresenceGroup(
+                "Vinculos inativos",
+                "Jogadores inativos que ja estavam salvos nesta partida continuam visiveis para revisao.",
+                groupedPlayers.inactiveLinked,
+              )
+            : null}
+        </div>
+      </Card>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
+              Etapa 2
+            </p>
+            <h3 className="mt-2 text-xl font-semibold text-white">
+              Estrutura da montagem
+            </h3>
+            <p className="mt-2 text-sm text-slate-400">
+              Ajuste a quantidade de vagas visuais para refletir o formato da rodada.
+              Cada time sempre reserva uma vaga de goleiro destacada.
+            </p>
+          </div>
+          <Badge>{missingSlots} vagas abertas</Badge>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <FormField label="Jogadores de linha por time">
+            <Input
+              type="number"
+              min="1"
+              value={activeDraft.linesPerTeam}
+              onChange={(event) => updateLinesPerTeam(Number(event.target.value || 0))}
+            />
+          </FormField>
+          <FormField label="Goleiros por time">
+            <Input type="number" value="1" disabled />
+          </FormField>
+          <FormField label="Reservas por time">
+            <Input
+              type="number"
+              min="0"
+              value={activeDraft.reservesPerTeam}
+              onChange={(event) =>
+                updateReservesPerTeam(Number(event.target.value || 0))
+              }
+            />
+          </FormField>
+        </div>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
+        <Card className="h-fit">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
+                Jogadores disponiveis
+              </p>
+              <h3 className="mt-2 text-xl font-semibold text-white">
+                Base para preencher as vagas
+              </h3>
+            </div>
+            <Badge>{availableCount} livres</Badge>
+          </div>
+
+          <div className="mt-5 grid gap-4">
+            <FormField
+              label="Busca por nome"
+              hint={
+                selectedSlot
+                  ? `Vaga selecionada: ${teamColors[selectedSlot.teamColor].label} / ${selectedSlot.label}`
+                  : "Selecione uma vaga para alocar mais rapido."
+              }
+            >
+              <Input
+                placeholder="Buscar por apelido ou nome"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+            </FormField>
+
+            {selectedSlot ? (
+              <div className="rounded-[24px] border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+                Clique em um nome abaixo para preencher{" "}
+                <strong>
+                  {teamColors[selectedSlot.teamColor].label} / {selectedSlot.label}
+                </strong>
+                . Tambem e possivel clicar entre duas vagas para mover ou trocar jogadores.
+              </div>
+            ) : (
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-4 text-sm text-slate-400">
+                Selecione uma vaga vazia ou ocupada no quadro de times para comecar a
+                preencher.
+              </div>
+            )}
+
+            <div className="grid gap-3">
+              {availablePlayers.length > 0 ? (
+                availablePlayers.map((player) => (
+                  <button
+                    key={player.id}
+                    type="button"
+                    disabled={!selectedSlot}
+                    onClick={() => selectedSlot && assignPlayerToSlot(player.id, selectedSlot)}
+                    className={cn(
+                      "rounded-[24px] border p-4 text-left transition",
+                      selectedSlot
+                        ? "border-white/10 bg-white/5 hover:border-amber-400/30 hover:bg-white/10"
+                        : "border-white/10 bg-slate-950/60 opacity-70",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-white">{player.nickname}</p>
+                        <p className="mt-1 text-sm text-slate-400">{player.full_name}</p>
+                      </div>
+                      <Badge>{formatPlayerTypeLabel(player.player_type)}</Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Badge>{formatPositionLabel(player.position)}</Badge>
+                      {!player.active ? (
+                        <Badge className="border-white/10 bg-slate-900/80 text-slate-300">
+                          {formatPlayerStatusLabel(player.active)}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <EmptyState
+                  title="Nenhum nome livre nesta combinacao"
+                  description="Ajuste a busca, marque mais presentes ou troque a vaga selecionada para liberar outras opcoes."
+                />
+              )}
+            </div>
+          </div>
+        </Card>
+
+        <div className="grid gap-6">
+          {teamOrder.map((teamColor) => {
+            const teamSlots = slots.filter((slot) => slot.teamColor === teamColor);
+            const lineSlots = teamSlots.filter((slot) => slot.kind === "line");
+            const goalkeeperSlot = teamSlots.find((slot) => slot.kind === "goalkeeper");
+            const reserveSlots = teamSlots.filter((slot) => slot.kind === "reserve");
+            const allocatedCount = teamSlots.filter(
+              (slot) => activeDraft.slotAssignments[slot.key],
+            ).length;
+
+            return (
+              <Card key={teamColor} className="overflow-hidden">
+                <div
+                  className={cn(
+                    "-mx-5 -mt-5 border-b px-5 py-4",
+                    teamColor === "blue"
+                      ? "border-cyan-400/20 bg-cyan-500/10"
+                      : "border-rose-400/20 bg-rose-500/10",
+                  )}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-400">
+                        Time {teamColors[teamColor].label}
+                      </p>
+                      <h3 className="mt-2 text-2xl font-semibold text-white">
+                        {allocatedCount} de {teamSlots.length} vagas preenchidas
+                      </h3>
+                    </div>
+                    <Badge
+                      className={
+                        teamColor === "blue"
+                          ? "border-cyan-400/30 bg-cyan-500/15 text-cyan-100"
+                          : "border-rose-400/30 bg-rose-500/15 text-rose-100"
+                      }
+                    >
+                      {teamColors[teamColor].label}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4">
+                  <div>
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-sm font-semibold text-white">Linha</p>
+                      <Badge>{lineSlots.length} vagas</Badge>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {lineSlots.map((slot) => renderSlot(slot))}
+                    </div>
+                  </div>
+
+                  {goalkeeperSlot ? (
+                    <div>
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-white">Goleiro</p>
+                        <Badge className="border-cyan-400/30 bg-cyan-500/15 text-cyan-100">
+                          Vaga destacada
+                        </Badge>
+                      </div>
+                      {renderSlot(goalkeeperSlot)}
+                    </div>
+                  ) : null}
+
+                  <div>
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-sm font-semibold text-white">Reservas</p>
+                      <Badge>{reserveSlots.length} vagas</Badge>
+                    </div>
+                    {reserveSlots.length > 0 ? (
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {reserveSlots.map((slot) => renderSlot(slot))}
+                      </div>
+                    ) : (
+                      <div className="rounded-[24px] border border-dashed border-white/10 bg-white/5 p-4 text-sm text-slate-500">
+                        Sem vagas de reserva configuradas para este lado.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="rounded-[24px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-400">
+          Presenca:{" "}
+          <strong className="text-white">{activeDraft.presentPlayerIds.length}</strong> |
+          Alocados: <strong className="text-white"> {assignedPlayerIds.size}</strong> |
+          Livres:{" "}
+          <strong className="text-white">
+            {activeDraft.presentPlayerIds.length - assignedPlayerIds.size}
+          </strong>
+        </div>
+        <SubmitButton className="min-w-64">Salvar presenca e montagem</SubmitButton>
+      </div>
+    </form>
+  );
+}

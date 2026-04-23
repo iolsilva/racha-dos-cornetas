@@ -132,6 +132,47 @@ export const updateMatchSchema = z
     }
   });
 
+export const teamBuilderSchema = z
+  .object({
+    matchId: z.uuid("Partida invalida."),
+    presentPlayerIds: z.array(z.uuid("Jogador invalido.")).default([]),
+    assignments: z.array(matchAssignmentSchema).default([]),
+  })
+  .superRefine((data, ctx) => {
+    const uniquePresentIds = new Set(data.presentPlayerIds);
+
+    if (uniquePresentIds.size !== data.presentPlayerIds.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["presentPlayerIds"],
+        message: "A lista de presenca contem jogadores repetidos.",
+      });
+    }
+
+    const assignmentPlayerIds = data.assignments.map((assignment) => assignment.playerId);
+    const uniqueAssignmentIds = new Set(assignmentPlayerIds);
+
+    if (uniqueAssignmentIds.size !== assignmentPlayerIds.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["assignments"],
+        message: "Um jogador nao pode aparecer duas vezes na mesma montagem.",
+      });
+    }
+
+    const missingPlayers = data.assignments.filter(
+      (assignment) => !uniquePresentIds.has(assignment.playerId),
+    );
+
+    if (missingPlayers.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["assignments"],
+        message: "Todo jogador alocado precisa estar confirmado na presenca.",
+      });
+    }
+  });
+
 export const resultSchema = z.object({
   matchId: z.uuid("Selecione a partida que voce quer atualizar."),
   blueScore: z.coerce.number().min(0, "O placar do azul nao pode ser negativo."),

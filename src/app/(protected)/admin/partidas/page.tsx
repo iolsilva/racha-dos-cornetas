@@ -1,5 +1,5 @@
 import { MatchEditorPanel } from "@/components/admin/match-editor-panel";
-import { TeamAssignmentForm } from "@/components/forms/team-assignment-form";
+import { TeamBuilder } from "@/components/admin/team-builder";
 import { MatchForm } from "@/components/forms/match-form";
 import { MatchResultForm } from "@/components/forms/match-result-form";
 import { Card } from "@/components/ui/card";
@@ -26,6 +26,16 @@ type AssignmentRow = {
 export default async function AdminPartidasPage() {
   await requireAdmin();
   const data = await getAdminMatchesData();
+  const teamBuilderKey = [
+    ...data.matches.map((match) => `${match.id}:${match.status}:${match.match_date}`),
+    ...data.attendanceRecords.map(
+      (record) => `${record.match_id}:${record.player_id}:${record.status}`,
+    ),
+    ...(data.assignments as AssignmentRow[]).map(
+      (assignment) =>
+        `${assignment.id}:${assignment.match_id}:${assignment.player_id}:${assignment.team_color}:${assignment.is_goalkeeper}:${assignment.is_reserve}:${assignment.lineup_order ?? ""}`,
+    ),
+  ].join("|");
 
   return (
     <div className="grid gap-6">
@@ -61,9 +71,12 @@ export default async function AdminPartidasPage() {
           <p className="mb-4 text-xs uppercase tracking-[0.24em] text-slate-500">
             Montar times
           </p>
-          <TeamAssignmentForm
+          <TeamBuilder
+            key={teamBuilderKey}
             matches={data.matches}
-            players={data.players.filter((player) => player.active)}
+            players={data.players}
+            attendanceRecords={data.attendanceRecords}
+            assignments={data.assignments as AssignmentRow[]}
           />
         </div>
       </Card>
