@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { TeamWhatsappPreview } from "@/components/admin/team-whatsapp-preview";
 import { useServerAction } from "@/components/forms/action-form";
 import { SubmitButton } from "@/components/forms/submit-button";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +72,13 @@ type TeamBuilderDraft = {
   slotAssignments: Record<string, string | null>;
   linesPerTeam: number;
   reservesPerTeam: number;
+};
+
+type PreviewEntry = {
+  label: string;
+  nickname: string;
+  fullName: string;
+  marker: "D" | "GD" | null;
 };
 
 const teamOrder: TeamColor[] = ["blue", "red"];
@@ -219,6 +227,74 @@ function getAssignedPlayerIds(slotAssignments: Record<string, string | null>) {
   );
 }
 
+function getPlayerMarker(player: PlayerRow | undefined) {
+  if (!player || player.player_type !== "guest") {
+    return null;
+  }
+
+  return player.position === "goalkeeper" ? "GD" : "D";
+}
+
+function buildPreviewEntries(
+  matchId: string | null,
+  assignments: AssignmentRow[],
+  playerMap: Record<string, PlayerRow>,
+  teamColor: TeamColor,
+) {
+  if (!matchId) {
+    return [];
+  }
+
+  const teamAssignments = assignments
+    .filter(
+      (assignment) =>
+        assignment.match_id === matchId && assignment.team_color === teamColor,
+    )
+    .sort(compareAssignments);
+
+  const lineEntries = teamAssignments
+    .filter((assignment) => !assignment.is_goalkeeper && !assignment.is_reserve)
+    .map((assignment, index) => {
+      const player = playerMap[assignment.player_id];
+
+      return {
+        label: `Linha ${index + 1}`,
+        nickname: player?.nickname ?? assignment.nickname,
+        fullName: player?.full_name ?? assignment.nickname,
+        marker: getPlayerMarker(player),
+      } satisfies PreviewEntry;
+    });
+
+  const goalkeeperEntry = teamAssignments
+    .filter((assignment) => assignment.is_goalkeeper)
+    .slice(0, 1)
+    .map((assignment) => {
+      const player = playerMap[assignment.player_id];
+
+      return {
+        label: "Goleiro",
+        nickname: player?.nickname ?? assignment.nickname,
+        fullName: player?.full_name ?? assignment.nickname,
+        marker: getPlayerMarker(player),
+      } satisfies PreviewEntry;
+    });
+
+  const reserveEntries = teamAssignments
+    .filter((assignment) => assignment.is_reserve && !assignment.is_goalkeeper)
+    .map((assignment, index) => {
+      const player = playerMap[assignment.player_id];
+
+      return {
+        label: `Reserva ${index + 1}`,
+        nickname: player?.nickname ?? assignment.nickname,
+        fullName: player?.full_name ?? assignment.nickname,
+        marker: getPlayerMarker(player),
+      } satisfies PreviewEntry;
+    });
+
+  return [...lineEntries, ...goalkeeperEntry, ...reserveEntries];
+}
+
 function getSlotPlayerCount(
   draft: TeamBuilderDraft,
   teamColor: TeamColor,
@@ -330,6 +406,7 @@ export function TeamBuilder({
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(defaultMatchId);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSlotKey, setSelectedSlotKey] = useState<string | null>(null);
+  const [showWhatsappPreview, setShowWhatsappPreview] = useState(false);
   const [draft, setDraft] = useState<TeamBuilderDraft | null>(() =>
     buildMatchDraft(defaultMatchId, attendanceRecords, assignments),
   );
@@ -420,6 +497,22 @@ export function TeamBuilder({
   const availableCount = availablePlayers.length;
   const serializedPresence = JSON.stringify(activeDraft.presentPlayerIds);
   const serializedAssignments = JSON.stringify(buildAssignmentsPayload(activeDraft));
+  const savedAssignmentsForMatch = assignments
+    .filter((assignment) => assignment.match_id === selectedMatchId)
+    .sort(compareAssignments);
+  const hasSavedLineup = savedAssignmentsForMatch.length > 0;
+  const bluePreviewEntries = buildPreviewEntries(
+    selectedMatchId,
+    savedAssignmentsForMatch,
+    playerMap,
+    "blue",
+  );
+  const redPreviewEntries = buildPreviewEntries(
+    selectedMatchId,
+    savedAssignmentsForMatch,
+    playerMap,
+    "red",
+  );
 
   function clearPlayerFromSlots(playerId: string, currentDraft: TeamBuilderDraft) {
     const nextAssignments = { ...currentDraft.slotAssignments };
@@ -613,6 +706,28 @@ export function TeamBuilder({
     setSelectedSlotKey(null);
   }
 
+  async function copyWhatsappText() {
+    if (!selectedMatch) {
+      return;
+    }
+
+    const lines = [
+      "Racha dos Cornetas",
+      `Times da rodada - ${selectedMatch.match_date} - ${selectedMatch.location}`,
+      "",
+      "TIME AZUL | TIME VERMELHO",
+      ...Array.from(
+        { length: Math.max(bluePreviewEntries.length, redPreviewEntries.length) },
+        (_, index) =>
+          `${bluePreviewEntries[index] ? `${bluePreviewEntries[index].label} - ${bluePreviewEntries[index].nickname}${bluePreviewEntries[index].marker ? ` (${bluePreviewEntries[index].marker})` : ""}` : "-"}` +
+          ` | ` +
+          `${redPreviewEntries[index] ? `${redPreviewEntries[index].label} - ${redPreviewEntries[index].nickname}${redPreviewEntries[index].marker ? ` (${redPreviewEntries[index].marker})` : ""}` : "-"}`,
+      ),
+    ].join("\n");
+
+    await navigator.clipboard.writeText(lines);
+  }
+
   function renderPresenceGroup(
     title: string,
     description: string,
@@ -783,12 +898,32 @@ export function TeamBuilder({
   }
 
   return (
-    <form action={formAction} className="grid gap-6">
-      <input type="hidden" name="matchId" value={selectedMatchId} />
-      <input type="hidden" name="presentPlayerIds" value={serializedPresence} />
-      <input type="hidden" name="assignments" value={serializedAssignments} />
+    <>
+      <TeamWhatsappPreview
+        open={showWhatsappPreview}
+        onClose={() => setShowWhatsappPreview(false)}
+        onCopyText={() => {
+          void copyWhatsappText();
+        }}
+        onPrint={() => window.print()}
+        match={
+          selectedMatch
+            ? {
+                match_date: selectedMatch.match_date,
+                location: selectedMatch.location,
+              }
+            : null
+        }
+        blueEntries={bluePreviewEntries}
+        redEntries={redPreviewEntries}
+      />
 
-      <Card className="mesh-panel">
+      <form action={formAction} className="grid gap-6">
+        <input type="hidden" name="matchId" value={selectedMatchId} />
+        <input type="hidden" name="presentPlayerIds" value={serializedPresence} />
+        <input type="hidden" name="assignments" value={serializedAssignments} />
+
+        <Card className="mesh-panel">
         <div className="grid gap-4 xl:grid-cols-[1fr_0.95fr]">
           <FormField
             label="Partida"
@@ -801,6 +936,7 @@ export function TeamBuilder({
                 setSelectedMatchId(nextMatchId);
                 setSearchTerm("");
                 setSelectedSlotKey(null);
+                setShowWhatsappPreview(false);
                 setDraft(buildMatchDraft(nextMatchId, attendanceRecords, assignments));
               }}
             >
@@ -837,7 +973,7 @@ export function TeamBuilder({
             </div>
           </div>
         </div>
-      </Card>
+        </Card>
 
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1170,18 +1306,31 @@ export function TeamBuilder({
         })}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="rounded-[24px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-400">
-          Presenca:{" "}
-          <strong className="text-white">{activeDraft.presentPlayerIds.length}</strong> |
-          Alocados: <strong className="text-white"> {assignedPlayerIds.size}</strong> |
-          Livres:{" "}
-          <strong className="text-white">
-            {activeDraft.presentPlayerIds.length - assignedPlayerIds.size}
-          </strong>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="rounded-[24px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-400">
+            Presenca:{" "}
+            <strong className="text-white">{activeDraft.presentPlayerIds.length}</strong> |
+            Alocados: <strong className="text-white"> {assignedPlayerIds.size}</strong> |
+            Livres:{" "}
+            <strong className="text-white">
+              {activeDraft.presentPlayerIds.length - assignedPlayerIds.size}
+            </strong>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {hasSavedLineup ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="min-w-56"
+                onClick={() => setShowWhatsappPreview(true)}
+              >
+                Visualizar para WhatsApp
+              </Button>
+            ) : null}
+            <SubmitButton className="min-w-64">Salvar presenca e montagem</SubmitButton>
+          </div>
         </div>
-        <SubmitButton className="min-w-64">Salvar presenca e montagem</SubmitButton>
-      </div>
-    </form>
+      </form>
+    </>
   );
 }
