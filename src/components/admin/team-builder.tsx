@@ -14,8 +14,8 @@ import { Select } from "@/components/ui/select";
 import { teamColors } from "@/lib/constants";
 import {
   formatMatchStatusLabel,
+  formatPlayerRegistrationLabel,
   formatPlayerStatusLabel,
-  formatPlayerTypeLabel,
   formatPositionLabel,
 } from "@/lib/labels";
 import { cn } from "@/lib/utils";
@@ -366,10 +366,22 @@ export function TeamBuilder({
       (player) => player.player_type === "fixed" && player.active,
     ),
     goalkeepers: relevantPlayers.filter(
-      (player) => player.player_type === "goalkeeper" && player.active,
+      (player) =>
+        player.player_type === "goalkeeper" &&
+        player.position === "goalkeeper" &&
+        player.active,
     ),
     guests: relevantPlayers.filter(
-      (player) => player.player_type === "guest" && player.active,
+      (player) =>
+        player.player_type === "guest" &&
+        player.position === "line" &&
+        player.active,
+    ),
+    guestGoalkeepers: relevantPlayers.filter(
+      (player) =>
+        player.player_type === "guest" &&
+        player.position === "goalkeeper" &&
+        player.active,
     ),
     inactiveLinked: relevantPlayers.filter(
       (player) => !player.active && selectedMatchPlayerIds.has(player.id),
@@ -655,7 +667,12 @@ export function TeamBuilder({
                   </Badge>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Badge>{formatPlayerTypeLabel(player.player_type)}</Badge>
+                  <Badge>
+                    {formatPlayerRegistrationLabel(
+                      player.player_type,
+                      player.position,
+                    )}
+                  </Badge>
                   <Badge>{formatPositionLabel(player.position)}</Badge>
                   {!player.active ? (
                     <Badge className="border-white/10 bg-slate-900/80 text-slate-300">
@@ -739,7 +756,10 @@ export function TeamBuilder({
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-2">
             <div className="flex flex-wrap gap-1.5">
               <Badge className="px-2 py-0.5 text-[10px]">
-                {formatPlayerTypeLabel(player.player_type)}
+                {formatPlayerRegistrationLabel(
+                  player.player_type,
+                  player.position,
+                )}
               </Badge>
               {!player.active ? (
                 <Badge className="border-white/10 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-300">
@@ -845,14 +865,19 @@ export function TeamBuilder({
             groupedPlayers.fixed,
           )}
           {renderPresenceGroup(
-            "Goleiros",
-            "Ficam separados para facilitar o encaixe final de cada lado.",
+            "Goleiros fixos",
+            "Ficam separados para facilitar o encaixe final de cada lado e preservar o grupo ranqueavel.",
             groupedPlayers.goalkeepers,
           )}
           {renderPresenceGroup(
-            "Diaristas",
+            "Diaristas de linha",
             "Entram na lista do dia sem misturar com os mensalistas fixos.",
             groupedPlayers.guests,
+          )}
+          {renderPresenceGroup(
+            "Goleiros diaristas",
+            "Aparecem apenas como opcao operacional para a vaga de goleiro.",
+            groupedPlayers.guestGoalkeepers,
           )}
           {groupedPlayers.inactiveLinked.length > 0
             ? renderPresenceGroup(
@@ -1030,7 +1055,10 @@ export function TeamBuilder({
                           </p>
                         </div>
                         <Badge className="px-2 py-0.5 text-[10px]">
-                          {formatPlayerTypeLabel(player.player_type)}
+                          {formatPlayerRegistrationLabel(
+                            player.player_type,
+                            player.position,
+                          )}
                         </Badge>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1.5">

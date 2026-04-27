@@ -14,8 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { teamColors } from "@/lib/constants";
 import {
   formatMatchStatusLabel,
+  formatPlayerRegistrationLabel,
   formatPlayerStatusLabel,
-  formatPlayerTypeLabel,
 } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import { updateMatchAction } from "@/server/actions/admin";
@@ -37,6 +37,7 @@ type PlayerRow = {
   full_name: string;
   nickname: string;
   player_type: "fixed" | "guest" | "goalkeeper";
+  position: "line" | "goalkeeper";
   active: boolean;
 };
 
@@ -82,11 +83,11 @@ function extractTime(startsAt: string | null) {
 function buildAssignmentMap(players: PlayerRow[], assignments: AssignmentRow[]) {
   const map: Record<string, AssignmentDraft> = Object.fromEntries(
     players.map((player) => [
-      player.id,
+        player.id,
       {
         included: false,
         teamColor: "blue" as const,
-        isGoalkeeper: player.player_type === "goalkeeper",
+        isGoalkeeper: player.position === "goalkeeper",
         isReserve: false,
         lineupOrder: "",
       },
@@ -192,7 +193,7 @@ export function MatchEditorForm({
         <div className="grid gap-3">
           {groupPlayers.map((player) => {
             const assignment = draft.assignmentMap[player.id];
-            const isForcedGoalkeeper = player.player_type === "goalkeeper";
+            const isForcedGoalkeeper = player.position === "goalkeeper";
 
             return (
               <div
@@ -210,7 +211,12 @@ export function MatchEditorForm({
                     <p className="mt-1 text-sm text-slate-400">{player.full_name}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge>{formatPlayerTypeLabel(player.player_type)}</Badge>
+                    <Badge>
+                      {formatPlayerRegistrationLabel(
+                        player.player_type,
+                        player.position,
+                      )}
+                    </Badge>
                     <Badge
                       className={
                         player.active
@@ -338,10 +344,19 @@ export function MatchEditorForm({
     (player) => player.player_type === "fixed" && player.active,
   );
   const activeGoalkeepers = players.filter(
-    (player) => player.player_type === "goalkeeper" && player.active,
+    (player) => player.position === "goalkeeper" && player.player_type === "goalkeeper" && player.active,
   );
   const activeGuests = players.filter(
-    (player) => player.player_type === "guest" && player.active,
+    (player) =>
+      player.player_type === "guest" &&
+      player.position === "line" &&
+      player.active,
+  );
+  const activeGuestGoalkeepers = players.filter(
+    (player) =>
+      player.player_type === "guest" &&
+      player.position === "goalkeeper" &&
+      player.active,
   );
   const inactivePlayers = players.filter((player) => !player.active);
 
@@ -523,13 +538,18 @@ export function MatchEditorForm({
         )}
         {renderPlayerGroup(
           "Goleiros ativos",
-          "Mantidos em grupo proprio para facilitar a montagem da rodada.",
+          "Mostra apenas os goleiros fixos que entram no ranking especifico da posicao.",
           activeGoalkeepers,
         )}
         {renderPlayerGroup(
           "Diaristas ativos",
-          "Ficam separados dos mensalistas para nao confundir a lista principal.",
+          "Aqui entram somente diaristas de linha para nao confundir com goleiro operacional.",
           activeGuests,
+        )}
+        {renderPlayerGroup(
+          "Goleiros diaristas",
+          "Ficam operacionais apenas para a vaga de goleiro, sem ranking e sem cobranca.",
+          activeGuestGoalkeepers,
         )}
         {renderPlayerGroup(
           "Arquivo inativo",

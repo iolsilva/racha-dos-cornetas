@@ -62,9 +62,18 @@ export async function createPlayerAction(
     });
 
     const normalizedPosition =
-      parsed.playerType === "goalkeeper" ? "goalkeeper" : "line";
+      parsed.playerType === "goalkeeper"
+        ? "goalkeeper"
+        : parsed.playerType === "fixed"
+          ? "line"
+          : parsed.position;
     const normalizedFeeExempt =
-      parsed.playerType === "goalkeeper" ? true : parsed.feeExempt;
+      parsed.playerType === "goalkeeper" ||
+      (parsed.playerType === "guest" && normalizedPosition === "goalkeeper")
+        ? true
+        : parsed.playerType === "fixed"
+          ? parsed.feeExempt
+          : false;
 
     const { error } = await supabase.from("players").insert({
       full_name: parsed.fullName,
@@ -107,6 +116,32 @@ export async function createPaymentAction(
       paidAt: formData.get("paidAt"),
       notes: formData.get("notes"),
     });
+
+    const { data: player, error: playerError } = await supabase
+      .from("players")
+      .select("player_type, position, fee_exempt")
+      .eq("id", parsed.playerId)
+      .single();
+
+    if (playerError || !player) {
+      throw new Error(playerError?.message ?? "Jogador nao encontrado para o lancamento.");
+    }
+
+    if (
+      parsed.paymentType === "monthly_fee" &&
+      (player.player_type !== "fixed" || player.position !== "line" || player.fee_exempt)
+    ) {
+      throw new Error("Somente mensalistas de linha entram no lancamento de mensalidade.");
+    }
+
+    if (
+      parsed.paymentType === "guest_fee" &&
+      (player.player_type !== "guest" || player.position !== "line" || player.fee_exempt)
+    ) {
+      throw new Error(
+        "A diaria vale apenas para diaristas de linha. Goleiro diarista fica operacional e isento.",
+      );
+    }
 
     const { error } = await supabase.from("payments").insert({
       player_id: parsed.playerId,

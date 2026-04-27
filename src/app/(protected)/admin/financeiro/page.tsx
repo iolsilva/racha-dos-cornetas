@@ -21,7 +21,7 @@ export default async function AdminFinanceiroPage() {
       <SectionHeader
         eyebrow="Admin / Financeiro"
         title="Receitas, despesas e caixa"
-        description="Mensalistas e diaristas ficam separados para deixar o lancamento financeiro mais rapido."
+        description="Mensalistas e diaristas pagantes ficam separados para deixar o lancamento financeiro mais rapido. Goleiro diarista entra apenas como apoio operacional e nao aparece nas cobrancas."
       />
 
       <div className="grid gap-6 xl:grid-cols-3">
@@ -48,7 +48,7 @@ export default async function AdminFinanceiroPage() {
             title="Registrar diarista"
             submitLabel="Salvar diarista"
             amountDefaultValue={15}
-            amountHint="Cadastro separado dos mensalistas. Valor padrao por jogo: R$ 15."
+            amountHint="A lista traz apenas diaristas de linha pagantes. Goleiro diarista fica isento e fora da cobranca."
           />
         </Card>
         <Card>

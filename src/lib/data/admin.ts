@@ -8,7 +8,7 @@ export async function getAdminOverviewData() {
     await Promise.all([
       supabase
         .from("players")
-        .select("id, active, player_type")
+        .select("id, active, player_type, position")
         .eq("active", true),
       supabase
         .from("matches")
@@ -45,8 +45,9 @@ export async function getAdminOverviewData() {
   return {
     fixedPlayersCount: activePlayers.filter((player) => player.player_type === "fixed")
       .length,
-    guestPlayersCount: activePlayers.filter((player) => player.player_type === "guest")
-      .length,
+    guestPlayersCount: activePlayers.filter(
+      (player) => player.player_type === "guest" && player.position === "line",
+    ).length,
     matchesCount: matchesResult.count ?? 0,
     monthlyFinancial: summaryResult.data?.[0] ?? null,
     attendance: attendanceResult.data ?? [],
@@ -83,10 +84,28 @@ export async function getAdminPlayersData() {
       (player) => player.player_type === "goalkeeper" && !player.active,
     ),
     activeGuests: players.filter(
-      (player) => player.player_type === "guest" && player.active,
+      (player) =>
+        player.player_type === "guest" &&
+        player.position === "line" &&
+        player.active,
     ),
     inactiveGuests: players.filter(
-      (player) => player.player_type === "guest" && !player.active,
+      (player) =>
+        player.player_type === "guest" &&
+        player.position === "line" &&
+        !player.active,
+    ),
+    activeGuestGoalkeepers: players.filter(
+      (player) =>
+        player.player_type === "guest" &&
+        player.position === "goalkeeper" &&
+        player.active,
+    ),
+    inactiveGuestGoalkeepers: players.filter(
+      (player) =>
+        player.player_type === "guest" &&
+        player.position === "goalkeeper" &&
+        !player.active,
     ),
   };
 }
@@ -98,7 +117,7 @@ export async function getAdminFinanceData() {
     await Promise.all([
       supabase
         .from("players")
-        .select("id, full_name, nickname, fee_exempt, player_type")
+        .select("id, full_name, nickname, fee_exempt, player_type, position")
         .eq("active", true)
         .order("full_name"),
       supabase
@@ -136,7 +155,14 @@ export async function getAdminFinanceData() {
       (player) => player.player_type === "fixed",
     ),
     guestPlayers: (playersResult.data ?? []).filter(
-      (player) => player.player_type === "guest",
+      (player) =>
+        player.player_type === "guest" &&
+        player.position === "line" &&
+        !player.fee_exempt,
+    ),
+    guestGoalkeepers: (playersResult.data ?? []).filter(
+      (player) =>
+        player.player_type === "guest" && player.position === "goalkeeper",
     ),
     goalkeepers: (playersResult.data ?? []).filter(
       (player) => player.player_type === "goalkeeper",

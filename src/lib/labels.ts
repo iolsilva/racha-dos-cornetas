@@ -37,6 +37,21 @@ export function formatPlayerTypeLabel(
   }
 }
 
+export function formatPlayerRegistrationLabel(
+  playerType: PlayerType | string | null | undefined,
+  position: PositionType | string | null | undefined,
+) {
+  if (playerType === "guest" && position === "goalkeeper") {
+    return "Goleiro diarista";
+  }
+
+  if (playerType === "goalkeeper" && position === "goalkeeper") {
+    return "Goleiro fixo";
+  }
+
+  return formatPlayerTypeLabel(playerType);
+}
+
 export function formatPlayerStatusLabel(active: boolean | null | undefined) {
   if (active === true) {
     return "Ativo";

@@ -52,8 +52,9 @@ create table public.players (
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
   constraint players_type_position_check check (
-    (player_type = 'goalkeeper' and position = 'goalkeeper')
-    or (player_type in ('fixed', 'guest') and position = 'line')
+    (player_type = 'fixed' and position = 'line')
+    or (player_type = 'goalkeeper' and position = 'goalkeeper')
+    or (player_type = 'guest' and position in ('line', 'goalkeeper'))
   )
 );
 
@@ -441,8 +442,10 @@ begin
     from public.match_players mp
     join public.match_teams mt on mt.id = mp.match_team_id
     join public.matches m on m.id = mp.match_id
+    join public.players p on p.id = mp.player_id
     where m.status = 'completed'
       and coalesce(m.counts_for_ranking, true) is true
+      and p.player_type <> 'guest'
       and extract(year from m.match_date)::integer = target_season
     group by mp.player_id
   )

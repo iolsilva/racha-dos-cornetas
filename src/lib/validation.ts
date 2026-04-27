@@ -24,11 +24,11 @@ export const playerSchema = z
       });
     }
 
-    if (data.playerType !== "goalkeeper" && data.position !== "line") {
+    if (data.playerType === "fixed" && data.position !== "line") {
       ctx.addIssue({
         code: "custom",
         path: ["position"],
-        message: "Mensalistas e diaristas entram como jogadores de linha.",
+        message: "Mensalista fixo entra como jogador de linha.",
       });
     }
   });

@@ -10,8 +10,9 @@ import { Table, Td, Th } from "@/components/ui/table";
 import { getAdminPlayersData } from "@/lib/data/admin";
 import { requireAdmin } from "@/lib/auth";
 import {
+  formatPlayerRegistrationLabel,
   formatPlayerStatusLabel,
-  formatPlayerTypeLabel,
+  formatPositionLabel,
 } from "@/lib/labels";
 
 function PlayersTable({
@@ -25,6 +26,7 @@ function PlayersTable({
     active: boolean;
     fee_exempt: boolean;
     player_type: "fixed" | "guest" | "goalkeeper";
+    position: "line" | "goalkeeper";
   }>;
   emptyMessage: string;
 }) {
@@ -40,6 +42,7 @@ function PlayersTable({
             <Th>Nome</Th>
             <Th>Apelido</Th>
             <Th>Tipo</Th>
+            <Th>Posicao</Th>
             <Th>Status</Th>
             <Th>Isento</Th>
             <Th className="text-right">Acao</Th>
@@ -50,7 +53,10 @@ function PlayersTable({
             <tr key={player.id}>
               <Td>{player.full_name}</Td>
               <Td>{player.nickname}</Td>
-              <Td>{formatPlayerTypeLabel(player.player_type)}</Td>
+              <Td>
+                {formatPlayerRegistrationLabel(player.player_type, player.position)}
+              </Td>
+              <Td>{formatPositionLabel(player.position)}</Td>
               <Td>
                 <Badge
                   className={
@@ -85,10 +91,10 @@ export default async function AdminJogadoresPage() {
       <SectionHeader
         eyebrow="Admin / Jogadores"
         title="Cadastro e manutencao"
-        description="Mensalistas, goleiros e diaristas aparecem em listas separadas para ficar mais proximo da sua operacao real."
+        description="Mensalistas, goleiros fixos, diaristas de linha e goleiros diaristas ficam separados para refletir a operacao real do racha."
       />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatsCard
           icon={Users}
           title="Mensalistas ativos"
@@ -97,15 +103,21 @@ export default async function AdminJogadoresPage() {
         />
         <StatsCard
           icon={Shield}
-          title="Goleiros ativos"
+          title="Goleiros fixos"
           value={String(players.activeGoalkeepers.length)}
           subtitle={`${players.inactiveGoalkeepers.length} goleiros inativos no arquivo`}
         />
         <StatsCard
           icon={UserRound}
-          title="Diaristas ativos"
+          title="Diaristas de linha"
           value={String(players.activeGuests.length)}
           subtitle={`${players.inactiveGuests.length} diaristas inativos em lista separada`}
+        />
+        <StatsCard
+          icon={Shield}
+          title="Goleiros diaristas"
+          value={String(players.activeGuestGoalkeepers.length)}
+          subtitle={`${players.inactiveGuestGoalkeepers.length} goleiros diaristas inativos em lista separada`}
         />
       </div>
 
@@ -170,11 +182,29 @@ export default async function AdminJogadoresPage() {
                 </div>
                 <div className="space-y-2">
                   <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                    Goleiros diaristas ativos
+                  </p>
+                  <PlayersTable
+                    players={players.activeGuestGoalkeepers}
+                    emptyMessage="Nenhum goleiro diarista ativo cadastrado."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
                     Inativos
                   </p>
                   <PlayersTable
                     players={players.inactiveGuests}
                     emptyMessage="Nenhum diarista inativo no arquivo."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                    Goleiros diaristas inativos
+                  </p>
+                  <PlayersTable
+                    players={players.inactiveGuestGoalkeepers}
+                    emptyMessage="Nenhum goleiro diarista inativo no arquivo."
                   />
                 </div>
               </div>

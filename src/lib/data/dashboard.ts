@@ -11,7 +11,7 @@ async function getSeasonRankingEntries() {
   const { data, error } = await adminClient
     .from("rankings")
     .select(
-      "season_year, player_id, wins, draws, losses, matches_played, players!inner(full_name, nickname, position, active)",
+      "season_year, player_id, wins, draws, losses, matches_played, players!inner(full_name, nickname, position, active, player_type)",
     )
     .eq("season_year", new Date().getFullYear())
     .order("wins", { ascending: false })
@@ -31,6 +31,9 @@ async function getSeasonRankingEntries() {
     position:
       ((row.players as { position?: "line" | "goalkeeper" } | null)?.position ??
         "line") as "line" | "goalkeeper",
+    player_type:
+      ((row.players as { player_type?: "fixed" | "guest" | "goalkeeper" } | null)
+        ?.player_type ?? "fixed") as "fixed" | "guest" | "goalkeeper",
     wins: row.wins,
     draws: row.draws,
     losses: row.losses,
@@ -45,7 +48,11 @@ function buildSeasonRanking(
 ) {
   const rankedEntries = withCompetitionPositions(
     entries
-      .filter((entry) => entry.position === group)
+      .filter((entry) =>
+        group === "line"
+          ? entry.player_type === "fixed" && entry.position === "line"
+          : entry.player_type === "goalkeeper" && entry.position === "goalkeeper",
+      )
       .sort(compareRankingEntries),
   );
 
