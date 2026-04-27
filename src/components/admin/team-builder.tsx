@@ -295,6 +295,18 @@ function buildPreviewEntries(
   return [...lineEntries, ...goalkeeperEntry, ...reserveEntries];
 }
 
+function formatPreviewLine(entry: PreviewEntry | undefined) {
+  if (!entry) {
+    return "-";
+  }
+
+  if (entry.label.startsWith("Linha ")) {
+    return `${entry.nickname}${entry.marker ? ` (${entry.marker})` : ""}`;
+  }
+
+  return `${entry.label} - ${entry.nickname}${entry.marker ? ` (${entry.marker})` : ""}`;
+}
+
 function getSlotPlayerCount(
   draft: TeamBuilderDraft,
   teamColor: TeamColor,
@@ -719,9 +731,9 @@ export function TeamBuilder({
       ...Array.from(
         { length: Math.max(bluePreviewEntries.length, redPreviewEntries.length) },
         (_, index) =>
-          `${bluePreviewEntries[index] ? `${bluePreviewEntries[index].label} - ${bluePreviewEntries[index].nickname}${bluePreviewEntries[index].marker ? ` (${bluePreviewEntries[index].marker})` : ""}` : "-"}` +
+          `${formatPreviewLine(bluePreviewEntries[index])}` +
           ` | ` +
-          `${redPreviewEntries[index] ? `${redPreviewEntries[index].label} - ${redPreviewEntries[index].nickname}${redPreviewEntries[index].marker ? ` (${redPreviewEntries[index].marker})` : ""}` : "-"}`,
+          `${formatPreviewLine(redPreviewEntries[index])}`,
       ),
     ].join("\n");
 
